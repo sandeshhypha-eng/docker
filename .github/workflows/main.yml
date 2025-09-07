@@ -66,7 +66,7 @@ jobs:
             zap-baseline.py -t http://localhost:3000 -r /zap/wrk/zap_reports/zap_report.html
   
       - name: Upload OWASP ZAP Report
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: zap-report
           path: zap_reports/zap_report.html
