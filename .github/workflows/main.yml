@@ -1,29 +1,41 @@
-name: CI/CD Pipeline
+name: CI
 
 on:
   push:
     branches:
       - main
   pull_request:
-    branches:
-      - main
 
 jobs:
   sonarQube:
-    name: SonarQube Scan
+    name: SonarCloud Scan
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
         uses: actions/checkout@v2
 
-      - name: SonarQube Scan
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.12'  # Match your project
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
+
+      - name: SonarCloud Scan
         uses: sonarsource/sonarcloud-github-action@v1
         with:
-          sonar-project-key: sandeshhypha-eng_docker
-          sonar-project-name: docker
-          sonar-project-version: 1.0
-          sonar-host-url: https://sonarcloud.io
-          sonar-login: ad37d70917d9acbfc5429a3a7c5f65bc8bad45a8
+          args: >
+            -Dsonar.projectKey=sandeshhypha-eng_docker
+            -Dsonar.organization=sandeshhypha-eng
+            -Dsonar.projectName=docker
+            -Dsonar.projectVersion=1.0
+            -Dsonar.sources=.
+        env:
+          SONAR_TOKEN: ad37d70917d9acbfc5429a3a7c5f65bc8bad45a8
+
 
   dast:
     name: OWASP DAST Scan
