@@ -63,7 +63,7 @@ jobs:
             -v $GITHUB_WORKSPACE:/zap/wrk \
             --user $(id -u):$(id -g) \
             ghcr.io/zaproxy/zaproxy:latest \
-            zap-baseline.py -t http://localhost:3000 -r /zap/wrk/zap_reports/zap_report.html
+            zap-baseline.py -t http://localhost:3000 -r /zap/wrk/zap_reports/zap_report.html -j /zap/wrk/zap_reports/zap_report.json
   
       - name: Upload OWASP ZAP Report
         uses: actions/upload-artifact@v4
