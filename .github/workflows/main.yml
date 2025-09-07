@@ -53,7 +53,7 @@ jobs:
   dast:
     name: OWASP DAST Scan
     runs-on: ubuntu-latest
-    needs: sonarQube
+    needs: sonar
     steps:
       - name: Checkout code
         uses: actions/checkout@v2
