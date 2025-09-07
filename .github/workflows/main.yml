@@ -61,7 +61,16 @@ jobs:
 
       - name: Start App Container
         run: docker run -d --name myapp -p 5000:5000 myapp:latest
-  
+      
+      - name: Create Docker Network
+        run: docker network create zapnet
+        
+      - name: Run App in Background
+        run: |
+          docker run -d --name myapp --network zapnet -p 5000:5000 myapp:latest
+          sleep 15
+      
+      
       - name: Run OWASP ZAP Baseline Scan
         run: |
           docker pull ghcr.io/zaproxy/zaproxy:latest
