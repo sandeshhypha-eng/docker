@@ -80,7 +80,7 @@ jobs:
         uses: actions/checkout@v2
 
       - name: Build Docker image
-        run: docker build -t myapp:latest .
+        run: docker build -t myapp:latest priya720/pycalapp:latest .
 
       - name: Scan Docker image with Trivy
         run: |
