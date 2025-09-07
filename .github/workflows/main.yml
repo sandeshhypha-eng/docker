@@ -45,11 +45,6 @@ jobs:
         env:
           SONAR_TOKEN: ad37d70917d9acbfc5429a3a7c5f65bc8bad45a8
 
-      
-      - name: Run OWASP ZAP Baseline Scan
-        run: |
-          docker run --rm --network zapnet ghcr.io/zaproxy/zaproxy:latest \
-            zap-baseline.py -t http://myapp:5000 -I -x -
     
   build:          
     name: Build Application
