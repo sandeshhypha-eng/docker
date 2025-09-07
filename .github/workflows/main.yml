@@ -72,7 +72,8 @@ jobs:
   
   docker:
     name: Build and Scan Docker Image
-    runs-on: ubuntu-latest
+    runs-on: aquasec/trivy:latest
+
     needs: build
     steps:
       - name: Checkout code
