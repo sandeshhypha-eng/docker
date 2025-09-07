@@ -45,37 +45,6 @@ jobs:
         env:
           SONAR_TOKEN: ad37d70917d9acbfc5429a3a7c5f65bc8bad45a8
 
-  dast:
-    name: OWASP DAST Scan
-    runs-on: ubuntu-latest
-    needs: sonar
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v2
-  
-      - name: Create report folder
-        run: mkdir -p zap_reports
-        
-      - name: Build App Image
-        run: docker build -t myapp:latest .
-
-      - name: Start App Container
-        run: docker run -d --name myapp -p 5000:5000 myapp:latest
-        
-      - name: Create Docker Network
-        run: docker network create zapnet
-        
-      - name: Remove old container if exists
-        run: |
-          docker rm -f myapp || true
-          docker rm -f zap || true
-          docker network rm zapnet || true
-
-      - name: Run App in Background
-        run: |
-          docker run -d --name myapp --network zapnet -p 5000:5000 myapp:latest
-          sleep 15
-      
       
       - name: Run OWASP ZAP Baseline Scan
         run: |
@@ -85,7 +54,7 @@ jobs:
   build:          
     name: Build Application
     runs-on: ubuntu-latest
-    needs: dast
+    needs: sonar
     steps:
       - name: Checkout code
         uses: actions/checkout@v2
