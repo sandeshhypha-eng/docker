@@ -62,7 +62,7 @@ jobs:
           docker run --rm \
             -v $GITHUB_WORKSPACE:/zap/wrk \
             -e ZAP_HOME=/zap/wrk/zap_reports \
-            --user $(id -u):$(id -g) \
+            -u 0:0 \ 
             ghcr.io/zaproxy/zaproxy:latest \
             zap-baseline.py -t http://localhost:3000 -r /zap/wrk/zap_reports/zap_report.html -j /zap/wrk/zap_reports/zap_report.json -y /zap/wrk/zap_reports/zap_report.yaml
   
@@ -70,7 +70,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: zap-report
-          path: zap_reports/zap_report.html
+          path: zap_reports
     
   build:          
     name: Build Application
