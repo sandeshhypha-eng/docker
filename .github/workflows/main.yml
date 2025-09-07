@@ -61,10 +61,16 @@ jobs:
 
       - name: Start App Container
         run: docker run -d --name myapp -p 5000:5000 myapp:latest
-      
+        
       - name: Create Docker Network
         run: docker network create zapnet
         
+      - name: Remove old container if exists
+        run: |
+          docker rm -f myapp || true
+          docker rm -f zap || true
+          docker network rm zapnet || true
+
       - name: Run App in Background
         run: |
           docker run -d --name myapp --network zapnet -p 5000:5000 myapp:latest
