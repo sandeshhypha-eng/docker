@@ -56,8 +56,7 @@ jobs:
       - name: Run OWASP DAST
         run: |
           docker pull ghcr.io/zaproxy/zaproxy:latest
-          docker run --rm -v $(pwd):/src owasp/zap2docker-stable zap-baseline.py -t http://localhost:3000 -r zap_report.html
-
+          docker run --rm -v $(pwd):/zap/wrk ghcr.io/zaproxy/zaproxy:latest zap-baseline.py -t http://localhost:3000 -r zap_report.html
   build:
     name: Build Application
     runs-on: ubuntu-latest
