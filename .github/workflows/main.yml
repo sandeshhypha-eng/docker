@@ -55,6 +55,9 @@ jobs:
   
       - name: Create report folder
         run: mkdir -p zap_reports
+        
+      - name: Start App Container
+        run: docker run -d --name myapp -p 3000:3000 myapp:latest
   
       - name: Run OWASP ZAP Baseline Scan
         run: |
