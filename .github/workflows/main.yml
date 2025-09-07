@@ -36,17 +36,13 @@ jobs:
           export PATH=$PATH:/opt/sonar-scanner/bin
           sonar-scanner --version
 
-      - name: Run SonarCloud Scan
-        env:
-          SONAR_TOKEN: ad37d70917d9acbfc5429a3a7c5f65bc8bad45a8
-        run: |
-          sonar-scanner \
-            -Dsonar.projectKey=sandeshhypha-eng_docker \
-            -Dsonar.organization=sandeshhypha-eng \
-            -Dsonar.projectName=docker \
-            -Dsonar.projectVersion=1.0 \
-            -Dsonar.sources=. \
-            -Dsonar.login=$SONAR_TOKEN
+      - name: SonarCloud Scan
+        uses: SonarSource/sonarcloud-github-action@v2
+         with:
+           projectKey: sandeshhypha-eng_docker
+           organization: sandeshhypha-eng
+           token: ad37d70917d9acbfc5429a3a7c5f65bc8bad45a8
+
 
 
 
