@@ -38,7 +38,7 @@ jobs:
 
       - name: SonarCloud Scan
         uses: SonarSource/sonarcloud-github-action@v2
-         with:
+        with:
            projectKey: sandeshhypha-eng_docker
            organization: sandeshhypha-eng
            token: ad37d70917d9acbfc5429a3a7c5f65bc8bad45a8
