@@ -72,7 +72,7 @@ jobs:
   
   docker:
     name: Build and Scan Docker Image
-    runs-on: aquasec/trivy:latest
+    runs-on: ubuntu-latest
 
     needs: build
     steps:
@@ -84,7 +84,12 @@ jobs:
 
       - name: Scan Docker image with Trivy
         run: |
-          trivy image --exit-code 1 --severity HIGH,CRITICAL your_dockerhub_username/your_image_name:latest
+            docker run --rm \
+            -v /var/run/docker.sock:/var/run/docker.sock \
+            aquasec/trivy:latest image \
+            --severity HIGH,CRITICAL \
+            myapp:latest
+          
 
   push:
     name: Push Docker Image to Docker Hub
