@@ -60,7 +60,7 @@ jobs:
         run: docker build -t myapp:latest .
 
       - name: Start App Container
-        run: docker run -d --name myapp -p 3000:3000 myapp:latest
+        run: docker run -d --name myapp -p 5001:5001 myapp:latest
   
       - name: Run OWASP ZAP Baseline Scan
         run: |
