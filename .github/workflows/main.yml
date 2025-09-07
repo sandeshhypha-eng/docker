@@ -52,11 +52,25 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v2
-
-      - name: Run OWASP DAST
+  
+      - name: Create report folder
+        run: mkdir -p zap_reports
+  
+      - name: Run OWASP ZAP Baseline Scan
         run: |
           docker pull ghcr.io/zaproxy/zaproxy:latest
-          docker run --rm -v $(pwd):/zap/wrk --user $(id -u):$(id -g) ghcr.io/zaproxy/zaproxy:latest zap-baseline.py -t http://localhost:3000 -r zap_report.html
+          docker run --rm \
+            -v $GITHUB_WORKSPACE:/zap/wrk \
+            --user $(id -u):$(id -g) \
+            ghcr.io/zaproxy/zaproxy:latest \
+            zap-baseline.py -t http://localhost:3000 -r /zap/wrk/zap_reports/zap_report.html
+  
+      - name: Upload OWASP ZAP Report
+        uses: actions/upload-artifact@v3
+        with:
+          name: zap-report
+          path: zap_reports/zap_report.html
+    
   build:          
     name: Build Application
     runs-on: ubuntu-latest
