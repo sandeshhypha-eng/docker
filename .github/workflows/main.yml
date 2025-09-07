@@ -19,11 +19,11 @@ jobs:
       - name: SonarQube Scan
         uses: sonarsource/sonarcloud-github-action@v1
         with:
-          sonar-project-key: your_project_key
-          sonar-project-name: your_project_name
+          sonar-project-key: sandeshhypha-eng_docker
+          sonar-project-name: docker
           sonar-project-version: 1.0
           sonar-host-url: https://sonarcloud.io
-          sonar-login: ${{ secrets.SONAR_TOKEN }}
+          sonar-login: ad37d70917d9acbfc5429a3a7c5f65bc8bad45a8
 
   dast:
     name: OWASP DAST Scan
@@ -74,8 +74,8 @@ jobs:
       - name: Log in to Docker Hub
         uses: docker/login-action@v1
         with:
-          username: ${{ secrets.DOCKER_USERNAME }}
-          password: ${{ secrets.DOCKER_PASSWORD }}
+          username: Sandesh Hypha
+          password: Sandy@100!
 
       - name: Push Docker image
         run: docker push your_dockerhub_username/your_image_name:latest
