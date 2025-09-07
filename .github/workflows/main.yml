@@ -80,7 +80,7 @@ jobs:
         uses: actions/checkout@v2
 
       - name: Build Docker image
-        run: docker build -t your_dockerhub_username/your_image_name:latest .
+        run: docker build -t myapp:latest .
 
       - name: Scan Docker image with Trivy
         run: |
@@ -103,4 +103,4 @@ jobs:
           password: Sandy@100!
 
       - name: Push Docker image
-        run: docker push your_dockerhub_username/your_image_name:latest
+        run: docker push Sandesh Hypha/pycalapp:latest
