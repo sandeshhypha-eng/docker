@@ -1,7 +1,14 @@
+# DAST workflow for the Flask app using OWASP ZAP.
+# This workflow starts the Flask app, runs a ZAP baseline scan inside a container,
+# collects HTML/JSON/XML reports into `zap-reports/`, uploads them as artifacts,
+# and prints a compact summary to the Actions log using `.github/zap_parse.py`.
 name: Python CI/CD with  DAST, Docker
 
 on:
+  # Manual trigger and PR trigger. `workflow_dispatch` lets you run this from the
+  # Actions UI and optionally provide inputs in the future.
   workflow_dispatch:
+  # Run on pull requests so DAST runs on PR branches before merge.
   pull_request:
 
 jobs:
@@ -11,22 +18,32 @@ jobs:
   dast:
     runs-on: ubuntu-latest
     steps:
+      # Checkout repository so the runner has the code to start the Flask app
+      # and to access workflow helper scripts and report directories.
       - name: Checkout code
         uses: actions/checkout@v2
 
       # Set up Python for running Flask app
+      # Install Python runtime so we can run the Flask app (app.py) and the
+      # helper parser `.github/zap_parse.py` used later to summarize results.
       - name: Set up Python
         uses: actions/setup-python@v4
         with:
           python-version: '3.12'
 
       # Install dependencies
+      # Install Python dependencies (if requirements.txt exists). This ensures
+      # the Flask app can import its dependencies during the DAST run.
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
           if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
 
       # Start Flask application in background
+      # Start the Flask application in the background. We redirect stdout/stderr
+      # to /tmp/flask.log so logs are available even if the process runs in
+      # background. The FLASK_PID is saved to the job environment so can be
+      # stopped later in the workflow cleanup step.
       - name: Start Flask Application
         run: |
           echo "Starting Flask app on port 5000..."
@@ -37,6 +54,8 @@ jobs:
           echo "Flask PID: $FLASK_PID"
 
       # Health check to verify Flask app is running
+      # Wait for the Flask app to become responsive. This loop polls the root
+      # URL and fails the job if the app doesn't start within the attempt window.
       - name: Health Check
         run: |
           echo "Checking if Flask app is running..."
@@ -56,6 +75,8 @@ jobs:
           exit 1
 
       # Display Flask app logs
+      # Always print Flask logs (useful when debugging start failures). The
+      # `if: always()` ensures we get logs even if previous steps failed.
       - name: Display Flask App Logs
         if: always()
         run: |
@@ -63,11 +84,27 @@ jobs:
           cat /tmp/flask.log || echo "No logs available"
 
       # Pull ZAP Docker image
+      # Pull the official ZAP container image from GitHub's container registry.
+      # Pulling explicitly helps avoid download delays later in the job.
       - name: Pull ZAP Image
         run: |
           docker pull ghcr.io/zaproxy/zaproxy:stable
 
+      # Prepare a writable workspace for ZAP reports
+      # Prepare a host directory for ZAP reports and make it writable by the
+      # container. ZAP writes reports to /zap/wrk inside the container; this is
+      # mounted to $GITHUB_WORKSPACE/zap-reports so the runner can upload them.
+      - name: Prepare ZAP reports directory
+        run: |
+          mkdir -p $GITHUB_WORKSPACE/zap-reports
+          # Give full rwx to avoid permission issues when container writes files
+          chmod 0777 $GITHUB_WORKSPACE/zap-reports
+
       # Run OWASP ZAP Baseline Scan
+      # Run the ZAP baseline scanner in a container. We mount the writable
+      # `zap-reports` host directory to `/zap/wrk` inside the container so ZAP
+      # can write HTML/JSON/XML reports there. Using `--network host` lets ZAP
+      # reach the locally started Flask server at localhost:5000 on the runner.
       - name: Run OWASP DAST (ZAP Baseline Scan)
         run: |
           echo "=========================================="
@@ -79,83 +116,48 @@ jobs:
           
           docker run --rm \
             --network host \
-            -v $(pwd):/zap/wrk \
+            -v $GITHUB_WORKSPACE/zap-reports:/zap/wrk \
             ghcr.io/zaproxy/zaproxy:stable \
             zap-baseline.py \
             -t http://localhost:5000 \
-            -r zap_baseline_report.html \
-            -J zap_baseline_report.json \
-            -x zap_baseline_report.xml
+            -r /zap/wrk/zap_baseline_report.html \
+            -J /zap/wrk/zap_baseline_report.json \
+            -x /zap/wrk/zap_baseline_report.xml
 
       # Upload ZAP scan results as artifacts
+      # Upload ZAP output files as workflow artifacts so they can be downloaded
+      # from the Actions run UI for a full review. `if: always()` ensures
+      # artifacts are uploaded even if the scan step failed.
       - name: Upload ZAP Scan Reports
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: zap-scan-reports
           path: |
-            zap_baseline_report.html
-            zap_baseline_report.json
-            zap_baseline_report.xml
+            zap-reports/zap_baseline_report.html
+            zap-reports/zap_baseline_report.json
+            zap-reports/zap_baseline_report.xml
 
       # Parse and display ZAP results
+      # Parse the JSON report and print a short summary into the job logs.
+      # This makes it easy to quickly see counts and top findings without
+      # downloading the full HTML/JSON/XML artifact. The parser is tolerant to
+      # missing files and will exit non-zero if parsing fails.
       - name: Parse ZAP Results
         if: always()
         run: |
           echo "=========================================="
           echo "OWASP ZAP Scan Results Summary"
           echo "=========================================="
-          if [ -f zap_baseline_report.json ]; then
-            echo "Scan completed successfully!"
-            echo ""
-            echo "Report generated: zap_baseline_report.json"
-            # Extract summary from JSON
-            python3 << 'EOF'
-          import json
-          import sys
-          
-          try:
-              with open('zap_baseline_report.json', 'r') as f:
-                  data = json.load(f)
-              
-              # Display scan statistics
-              if 'site' in data:
-                  alerts = data['site'][0].get('alerts', [])
-                  print(f"Total Alerts Found: {len(alerts)}")
-                  print("")
-                  
-                  # Group by risk level
-                  risk_counts = {'High': 0, 'Medium': 0, 'Low': 0, 'Informational': 0}
-                  for alert in alerts:
-                      risk = alert.get('riskdesc', 'Informational')
-                      if risk in risk_counts:
-                          risk_counts[risk] += 1
-                  
-                  print("📊 Vulnerabilities by Risk Level:")
-                  print(f"  🔴 High: {risk_counts['High']}")
-                  print(f"  🟠 Medium: {risk_counts['Medium']}")
-                  print(f"  🟡 Low: {risk_counts['Low']}")
-                  print(f"  ℹ️  Informational: {risk_counts['Informational']}")
-                  print("")
-                  
-                  print("Detected Issues:")
-                  for alert in alerts[:10]:  # Show first 10
-                      print(f"  - {alert.get('name', 'Unknown')}")
-                      print(f"    Risk: {alert.get('riskdesc', 'N/A')}")
-                      print(f"    URL: {alert.get('instances', [{}])[0].get('uri', 'N/A')}")
-                      print("")
-          except Exception as e:
-              print(f"Error parsing results: {e}")
-              sys.exit(1)
-          EOF
-          else
-            echo "No JSON report found"
-          fi
+          if [ -f zap-reports/zap_baseline_report.json ]; then echo "Scan completed successfully!"; echo ""; echo "Report generated: zap-reports/zap_baseline_report.json"; python3 .github/zap_parse.py; else echo "No JSON report found"; fi
           echo "=========================================="
           echo "✅ DAST scan completed. Check artifacts for detailed reports."
           echo "=========================================="
 
       # Stop Flask app
+      # Stop the background Flask application started earlier. `if: always()`
+      # ensures we attempt to stop the app during workflow cleanup even when
+      # other steps have failed.
       - name: Stop Flask Application
         if: always()
         run: |

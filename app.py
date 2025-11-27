@@ -1,11 +1,15 @@
 # app.py
-from flask import Flask, request, render_template_string
+from flask import Flask, request, render_template_string, make_response
 import sqlite3
 import subprocess
 import pickle
 import base64
 import os
 import hashlib
+import random
+import ssl
+import urllib.request
+import tempfile
 
 app = Flask(__name__)
 
@@ -69,6 +73,21 @@ def calculator():
 ADMIN_USER = "admin"
 ADMIN_PASS = "P@ssw0rd!"  # INTENTIONAL hard-coded secret for testing
 
+# Additional intentional sensitive values and insecure defaults for testing
+# These are deliberately insecure and should be removed in real projects.
+API_KEY = "API_KEY_1234567890abcdef"            # fake API key (hard-coded)
+DB_PASSWORD = "db_password_123"                 # fake DB password in source
+JWT_SECRET = "supersecretjwtkey_do_not_use_in_prod"  # hard-coded JWT secret
+AWS_ACCESS_KEY_ID = "AKIAFAKEEXAMPLE"
+AWS_SECRET_ACCESS_KEY = "fakeSecretKey1234567890"
+
+# Fake private key (placeholder) — scanners will detect PEM format in source
+FAKE_PRIVATE_KEY = """
+-----BEGIN RSA PRIVATE KEY-----
+MIIEogIBAAKCAQEA7V...FAKE...KEY...REMOVE...THIS...KEY
+-----END RSA PRIVATE KEY-----
+"""
+
 
 @app.route("/login", methods=["POST"])
 def login():
@@ -102,6 +121,102 @@ def get_user():
         return row[0] if row else "No user"
     except Exception as e:
         return f"Error: {e}"
+
+
+# -------------------------------
+# Additional intentional vulnerabilities
+# -------------------------------
+
+
+@app.after_request
+def add_insecure_headers(response):
+    # INTENTIONAL: add permissive CORS header and missing security headers.
+    # ZAP will flag permissive CORS and missing X-Frame-Options / CSP.
+    response.headers['Access-Control-Allow-Origin'] = '*'
+    # Intentionally do NOT set X-Frame-Options, Content-Security-Policy, etc.
+    return response
+
+
+@app.route('/secrets')
+def secrets():
+    # INTENTIONAL: endpoint that exposes hard-coded secrets (for testing only)
+    # SAST should flag hard-coded credentials and secrets in source.
+    return {
+        'api_key': API_KEY,
+        'db_password': DB_PASSWORD,
+        'jwt_secret': JWT_SECRET,
+        'aws_key': AWS_ACCESS_KEY_ID,
+        'aws_secret': AWS_SECRET_ACCESS_KEY,
+    }
+
+
+@app.route('/leak_env')
+def leak_env():
+    # INTENTIONAL: echo some environment variables which may contain secrets.
+    # DAST may flag endpoints that reveal environment variables.
+    keys = ['PATH', 'HOME', 'AWS_ACCESS_KEY_ID', 'AWS_SECRET_ACCESS_KEY', 'SECRET_TOKEN']
+    out = {}
+    for k in keys:
+        out[k] = os.environ.get(k, '<not set>')
+    return out
+
+
+@app.route('/insecure-https')
+def insecure_https():
+    # INTENTIONAL: perform an HTTPS request with certificate verification disabled
+    # This simulates insecure TLS configuration or client behavior.
+    ctx = ssl._create_unverified_context()
+    try:
+        with urllib.request.urlopen('https://expired.badssl.com/', context=ctx, timeout=5) as r:
+            body = r.read(200).decode(errors='ignore')
+            return f"Fetched (truncated): {body[:200]}"
+    except Exception as e:
+        return f"Error fetching remote host (expected in some runners): {e}"
+
+
+@app.route('/os_system')
+def os_system_cmd():
+    # INTENTIONAL: using os.system with user input (very unsafe)
+    cmd = request.args.get('cmd', 'echo no-cmd')
+    # This will be flagged as command injection / dangerous OS call
+    res = os.system(cmd)
+    return f"os.system returned: {res}"
+
+
+@app.route('/predictable-temp')
+def predictable_temp():
+    # INTENTIONAL: create a predictable temporary filename which can lead to
+    # race conditions or information disclosure. Use of tempfile.NamedTemporaryFile
+    # without proper flags would be safer; here we intentionally build a predictable name.
+    pid = os.getpid()
+    path = f"/tmp/app_tmp_{pid}.tmp"
+    with open(path, 'w') as f:
+        f.write('temporary data')
+    return f"Wrote predictable temp file: {path}"
+
+
+@app.route('/setcookie')
+def set_cookie():
+    # INTENTIONAL: set cookie without Secure or HttpOnly flags.
+    resp = make_response('cookie set insecurely')
+    resp.set_cookie('sessionid', 'insecure-session-token', secure=False, httponly=False)
+    return resp
+
+
+@app.route('/weak-rng')
+def weak_rng():
+    # INTENTIONAL: using random.random() to generate a token (weak PRNG for secrets)
+    token = str(random.random())
+    return {'token': token}
+
+
+@app.route('/write_secret_file')
+def write_secret_file():
+    # INTENTIONAL: save a secret to disk in plaintext (bad practice)
+    path = os.path.join('/tmp', 'app_secret.txt')
+    with open(path, 'w') as fh:
+        fh.write(f"API_KEY={API_KEY}\nJWT_SECRET={JWT_SECRET}\n")
+    return f"Wrote secrets to {path} (insecure)"
 
 
 @app.route("/run")

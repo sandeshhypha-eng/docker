@@ -1,6 +1,12 @@
+# SAST workflow using SonarCloud.
+# This workflow runs a SonarCloud analysis using the SonarScanner action.
+# It installs Java & SonarScanner CLI because the Sonar scanning tool requires
+# a Java runtime and a scanner CLI for the analysis step.
 name: SonarCloud Scan
 
 on:
+  # Run on pull requests to scan PRs before merge, and allow manual runs via
+  # the Actions UI using workflow_dispatch.
   pull_request:
   workflow_dispatch:
 
@@ -9,25 +15,37 @@ jobs:
   sonar:
     runs-on: ubuntu-latest
     steps:
+      # Checkout the repository so SonarCloud can analyze the current sources.
       - uses: actions/checkout@v2
 
+      # Configure Python environment in case Python-specific plugins or
+      # linters are required by the project and to ensure tests can be run.
       - name: Set up Python
         uses: actions/setup-python@v4
         with:
           python-version: '3.12'
 
+      # Install Python dependencies so that any test commands or analysis that
+      # depend on them can run (for example, pytest/coverage). This is optional
+      # but commonly useful prior to running Sonar analysis.
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
           if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
 
 
+      # SonarScanner (and some Sonar analyzers) require Java. Install Java 17
+      # so the Sonar CLI runs correctly inside the job.
       - name: Set up Java 17
         uses: actions/setup-java@v3
         with:
           distribution: temurin
           java-version: '17'
 
+      # Download and install the SonarScanner CLI. This example installs a
+      # specific scanner CLI into /opt so the `sonar-scanner` binary is
+      # available for the following SonarCloud action. The version used here is
+      # explicitly pinned; update as needed.
       - name: Install SonarScanner CLI
         run: |
           curl -sSLo sonar-scanner.zip https://binaries.sonarsource.com/Distribution/sonar-scanner-cli/sonar-scanner-cli-4.8.1.3023-linux.zip
@@ -36,6 +54,11 @@ jobs:
           export PATH=$PATH:/opt/sonar-scanner/bin
           sonar-scanner --version
 
+      # Run SonarCloud analysis. The `sonar.sources=.` argument tells the
+      # scanner to analyze the repository root. IMPORTANT: do not place the
+      # SONAR_TOKEN directly in the workflow; instead add it as a repository
+      # secret (see README). The token below is an example value and should be
+      # replaced with `${{ secrets.SONAR_TOKEN }}` in production.
       - name: Run SonarCloud Scan
         uses: SonarSource/sonarcloud-github-action@v2
         with:
@@ -46,6 +69,9 @@ jobs:
         env:
           SONAR_TOKEN: ad37d70917d9acbfc5429a3a7c5f65bc8bad45a8
 
+      # Print a short pointer to SonarCloud results. The actual issue details
+      # must be viewed on the SonarCloud web UI; the action uploads the analysis
+      # to the SonarCloud project configured above.
       - name: Fetch SonarQube Analysis Results
         if: always()
         run: |
