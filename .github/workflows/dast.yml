@@ -123,6 +123,8 @@ jobs:
             -r /zap/wrk/zap_baseline_report.html \
             -J /zap/wrk/zap_baseline_report.json \
             -x /zap/wrk/zap_baseline_report.xml
+# Ensure the report paths above do not repeat /zap/wrk/ (no doubled path).
+# If you see NoSuchFileException for HTML, check this path is correct.
 
       # Upload ZAP scan results as artifacts
       # Upload ZAP output files as workflow artifacts so they can be downloaded
