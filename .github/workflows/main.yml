@@ -41,7 +41,7 @@ jobs:
           args: >
             -Dsonar.organization=sandeshhypha-eng
             -Dsonar.projectKey=sandeshhypha-eng_docker
-            -Dsonar.sources=
+            -Dsonar.sources=.
         env:
           SONAR_TOKEN: ad37d70917d9acbfc5429a3a7c5f65bc8bad45a8
 
