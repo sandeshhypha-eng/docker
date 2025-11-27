@@ -1,9 +1,7 @@
 name: Python CI/CD with  DAST, Docker
 
 on:
-  push:
-    branches:
-      - main
+  workflow_dispatch:
   pull_request:
 
 jobs:
@@ -92,7 +90,7 @@ jobs:
       # Upload ZAP scan results as artifacts
       - name: Upload ZAP Scan Reports
         if: always()
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: zap-scan-reports
           path: |
