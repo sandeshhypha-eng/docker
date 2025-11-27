@@ -1,5 +1,5 @@
 # app.py
-from flask import Flask, request, render_template_string, make_response
+from flask import Flask, request, render_template_string, make_response, jsonify
 import sqlite3
 import subprocess
 import pickle
@@ -10,6 +10,11 @@ import random
 import ssl
 import urllib.request
 import tempfile
+import shlex
+import ast
+import json
+import secrets
+from werkzeug.utils import secure_filename
 
 app = Flask(__name__)
 
@@ -109,14 +114,19 @@ def get_user():
     # Sonar/SAST expectations for this endpoint:
     # - SQL Injection risk due to building SQL via string concatenation with user input
     # - Rule categories: SQL injection, untrusted input in DB query
+    # Use parameterized queries to avoid SQL injection and validate input.
     user_id = request.args.get("id", "")
+    try:
+        uid = int(user_id)
+    except Exception:
+        return "Invalid id", 400
+
     conn = sqlite3.connect(":memory:")
     cur = conn.cursor()
     cur.execute("CREATE TABLE users(id INTEGER PRIMARY KEY, name TEXT);")
     cur.execute("INSERT INTO users(id,name) VALUES(1,'Alice'),(2,'Bob');")
-    query = "SELECT name FROM users WHERE id = " + user_id
     try:
-        cur.execute(query)
+        cur.execute("SELECT name FROM users WHERE id = ?", (uid,))
         row = cur.fetchone()
         return row[0] if row else "No user"
     except Exception as e:
@@ -163,83 +173,97 @@ def leak_env():
 
 @app.route('/insecure-https')
 def insecure_https():
-    # INTENTIONAL: perform an HTTPS request with certificate verification disabled
-    # This simulates insecure TLS configuration or client behavior.
-    ctx = ssl._create_unverified_context()
+    # Ensure server certificate validation and hostname verification are enabled
+    # by using the default SSL context. Do NOT disable verification in client
+    # code. Use a well-known test host that presents a valid certificate.
     try:
-        with urllib.request.urlopen('https://expired.badssl.com/', context=ctx, timeout=5) as r:
+        with urllib.request.urlopen('https://www.example.com/', timeout=5) as r:
             body = r.read(200).decode(errors='ignore')
             return f"Fetched (truncated): {body[:200]}"
     except Exception as e:
-        return f"Error fetching remote host (expected in some runners): {e}"
+        return f"Error fetching remote host: {e}"
 
 
 @app.route('/os_system')
 def os_system_cmd():
-    # INTENTIONAL: using os.system with user input (very unsafe)
+    # Avoid constructing shell commands from user input. Use a safe allow-list
+    # of commands and run them without a shell to prevent injection.
     cmd = request.args.get('cmd', 'echo no-cmd')
-    # This will be flagged as command injection / dangerous OS call
-    res = os.system(cmd)
-    return f"os.system returned: {res}"
+    parts = shlex.split(cmd)
+    if not parts:
+        return "No command provided", 400
+    allowed = {"echo": ["echo"], "date": ["date"], "uptime": ["uptime"]}
+    if parts[0] not in allowed:
+        return "Command not allowed", 403
+    try:
+        proc = subprocess.run(parts, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+        return proc.stdout or proc.stderr
+    except Exception as e:
+        return f"Error executing command: {e}", 500
 
 
 @app.route('/predictable-temp')
 def predictable_temp():
-    # INTENTIONAL: create a predictable temporary filename which can lead to
-    # race conditions or information disclosure. Use of tempfile.NamedTemporaryFile
-    # without proper flags would be safer; here we intentionally build a predictable name.
-    pid = os.getpid()
-    path = f"/tmp/app_tmp_{pid}.tmp"
-    with open(path, 'w') as f:
-        f.write('temporary data')
-    return f"Wrote predictable temp file: {path}"
+    # Use secure temporary file APIs to avoid predictable filenames and race
+    # conditions. NamedTemporaryFile with delete=False yields a unique file.
+    tf = tempfile.NamedTemporaryFile(prefix="app_tmp_", delete=False)
+    try:
+        tf.write(b"temporary data")
+        tf.flush()
+        return f"Wrote secure temp file: {tf.name}"
+    finally:
+        tf.close()
 
 
 @app.route('/setcookie')
 def set_cookie():
-    # INTENTIONAL: set cookie without Secure or HttpOnly flags.
-    resp = make_response('cookie set insecurely')
-    resp.set_cookie('sessionid', 'insecure-session-token', secure=False, httponly=False)
+    # Set cookies with Secure and HttpOnly flags to protect them in browsers.
+    resp = make_response('cookie set (secure flags enabled)')
+    resp.set_cookie('sessionid', 'insecure-session-token', secure=True, httponly=True, samesite='Lax')
     return resp
 
 
 @app.route('/weak-rng')
 def weak_rng():
-    # INTENTIONAL: using random.random() to generate a token (weak PRNG for secrets)
-    token = str(random.random())
+    # Use the secrets module for cryptographically secure tokens.
+    token = secrets.token_urlsafe(16)
     return {'token': token}
 
 
 @app.route('/write_secret_file')
 def write_secret_file():
-    # INTENTIONAL: save a secret to disk in plaintext (bad practice)
-    path = os.path.join('/tmp', 'app_secret.txt')
-    with open(path, 'w') as fh:
-        fh.write(f"API_KEY={API_KEY}\nJWT_SECRET={JWT_SECRET}\n")
-    return f"Wrote secrets to {path} (insecure)"
+    # Do NOT write secrets to disk. For safety, refuse this operation and
+    # return a 403 status to indicate the action is disallowed.
+    return "Writing secrets to disk is disabled", 403
 
 
 @app.route("/run")
 def run_cmd():
-    # INTENTIONAL command injection: using shell=True with unsanitized input
-    # Sonar/SAST expectations for this endpoint:
-    # - Command injection / OS command execution with user-controlled input
-    # - Use of subprocess with shell=True and unsanitized parameters should be flagged
+    # Avoid shell=True and do not construct shell commands from user input.
     cmd = request.args.get("cmd", "")
-    result = subprocess.run(cmd, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
-    return result.stdout or result.stderr
+    parts = shlex.split(cmd)
+    if not parts:
+        return "No command provided", 400
+    allowed = {"echo": ["echo"], "date": ["date"], "uptime": ["uptime"]}
+    if parts[0] not in allowed:
+        return "Command not allowed", 403
+    try:
+        proc = subprocess.run(parts, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+        return proc.stdout or proc.stderr
+    except Exception as e:
+        return f"Error executing command: {e}", 500
 
 
 @app.route("/eval", methods=["POST"])
 def do_eval():
-    # INTENTIONAL: using eval on user-controlled input
-    # Sonar/SAST expectations for this endpoint:
-    # - Use of eval/exec on user input is unsafe and should be flagged (code injection)
+    # Replace eval with ast.literal_eval which only evaluates Python literals
+    # (lists, dicts, numbers, strings) and not arbitrary code.
     expr = request.form.get("expr", "")
     try:
-        return str(eval(expr))
+        value = ast.literal_eval(expr)
+        return jsonify(result=value)
     except Exception as e:
-        return f"Error: {e}"
+        return f"Error: {e}", 400
 
 
 @app.route("/upload", methods=["POST"])
@@ -251,24 +275,26 @@ def upload():
     f = request.files.get("file")
     if not f:
         return "No file", 400
-    filename = f.filename
-    path = os.path.join("/tmp", filename)
+    # Sanitize the filename to avoid directory traversal and unsafe characters.
+    filename = secure_filename(f.filename)
+    if filename == "":
+        return "Invalid filename", 400
+    path = os.path.join(tempfile.gettempdir(), filename)
     f.save(path)
     return f"Saved to {path}"
 
 
 @app.route("/deserialize", methods=["POST"])
 def deserialize():
-    # INTENTIONAL insecure deserialization using pickle on untrusted input
-    # Sonar/SAST expectations for this endpoint:
-    # - Insecure deserialization (pickle.loads on untrusted data) which can lead to remote code execution
-    # - Tools should flag usage of pickle.loads on data coming from requests
+    # Do not use pickle.loads on untrusted input. Use JSON for safe deserialization
+    # if the client sends JSON encoded and base64-wrapped data.
     data = request.data
     try:
-        obj = pickle.loads(base64.b64decode(data))
+        decoded = base64.b64decode(data).decode('utf-8')
+        obj = json.loads(decoded)
         return f"Deserialized {str(type(obj))}"
     except Exception as e:
-        return f"Error: {e}"
+        return f"Error: {e}", 400
 
 
 # -------------------------------
@@ -295,9 +321,9 @@ def _run_coverage_smoke_tests():
         import io
         data = {"file": (io.BytesIO(b"test"), "test.txt")}
         c.post("/upload", data=data, content_type="multipart/form-data")
-        # Deserialization
-        import base64, pickle
-        obj = pickle.dumps({"a": 1})
+        # Deserialization (send JSON wrapped in base64 to match safe deserializer)
+        import base64
+        obj = json.dumps({"a": 1}).encode('utf-8')
         c.post("/deserialize", data=base64.b64encode(obj))
         # New endpoints
         c.get("/secrets")
