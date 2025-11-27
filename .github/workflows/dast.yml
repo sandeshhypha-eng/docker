@@ -126,6 +126,14 @@ jobs:
 # Ensure the report paths above do not repeat /zap/wrk/ (no doubled path).
 # If you see NoSuchFileException for HTML, check this path is correct.
 
+
+      # Debug: List contents of zap-reports after ZAP scan to diagnose report path issues
+      - name: List ZAP report directory contents
+        if: always()
+        run: |
+          echo "Listing contents of zap-reports after ZAP scan:"
+          ls -l zap-reports
+
       # Upload ZAP scan results as artifacts
       # Upload ZAP output files as workflow artifacts so they can be downloaded
       # from the Actions run UI for a full review. `if: always()` ensures
