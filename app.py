@@ -52,6 +52,8 @@ def calculator():
     return render_template_string(HTML_TEMPLATE, result=result)
 
 
+
+
 # ------------------------------------------------------------------
 # INTENTIONAL VULNERABILITIES FOR TESTING (for Sonar/scan tooling)
 # These endpoints are deliberately insecure to let scanners identify
@@ -155,4 +157,3 @@ def deserialize():
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=5000)
-vv
