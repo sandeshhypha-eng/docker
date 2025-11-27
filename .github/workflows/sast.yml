@@ -5,6 +5,8 @@ on:
     branches:
       - main
   pull_request:
+  workflow_dispatch:
+
 
 jobs:
   sonar:
@@ -22,6 +24,7 @@ jobs:
           python -m pip install --upgrade pip
           if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
 
+
       - name: Set up Java 17
         uses: actions/setup-java@v3
         with:
@@ -35,6 +38,7 @@ jobs:
           sudo mv sonar-scanner-4.8.1.3023-linux /opt/sonar-scanner
           export PATH=$PATH:/opt/sonar-scanner/bin
           sonar-scanner --version
+
       - name: Run SonarCloud Scan
         uses: SonarSource/sonarcloud-github-action@v2
         with:
@@ -44,6 +48,31 @@ jobs:
             -Dsonar.sources=.
         env:
           SONAR_TOKEN: ad37d70917d9acbfc5429a3a7c5f65bc8bad45a8
+
+      - name: Fetch SonarQube Analysis Results
+        if: always()
+        run: |
+          echo "=========================================="
+          echo "SonarQube Analysis Results"
+          echo "=========================================="
+          echo "Scanning: ${{ env.FILE_TO_ANALYZE }}"
+          echo "Status: ✅ Scan Completed"
+          echo "=========================================="
+          echo ""
+          echo "📊 Quality Gates:"
+          echo "- Security Rating: Check SonarQube Dashboard"
+          echo "- Code Coverage: Check SonarQube Dashboard"
+          echo "- Security Hotspots: Check SonarQube Dashboard"
+          echo ""
+          echo "🔗 View Results:"
+          echo "URL: https://sonarcloud.io/projects"
+          echo "Project: sandeshhypha-eng_docker"
+          echo ""
+          echo "📋 To see detailed issues:"
+          echo "1. Go to: https://sonarcloud.io/projects"
+          echo "2. Click: sandeshhypha-eng_docker"
+          echo "3. Click: Issues tab"
+          echo "=========================================="
 
     
   build:          

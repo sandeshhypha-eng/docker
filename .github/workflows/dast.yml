@@ -1,0 +1,278 @@
+name: Python CI/CD with SonarCloud, DAST, Docker
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+
+jobs:
+  # ---------------------------
+  # SonarCloud Static Code Analysis
+  # ---------------------------
+  sonar:
+    runs-on: ubuntu-latest
+    steps:
+      # Checkout the code
+      - uses: actions/checkout@v2
+
+      # Set up Python
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.12'
+
+      # Install Python dependencies
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
+
+      # Set up Java for SonarScanner
+      - name: Set up Java 17
+        uses: actions/setup-java@v3
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      # Install SonarScanner CLI
+      - name: Install SonarScanner CLI
+        run: |
+          curl -sSLo sonar-scanner.zip https://binaries.sonarsource.com/Distribution/sonar-scanner-cli/sonar-scanner-cli-4.8.1.3023-linux.zip
+          unzip sonar-scanner.zip
+          sudo mv sonar-scanner-4.8.1.3023-linux /opt/sonar-scanner
+          echo "/opt/sonar-scanner/bin" >> $GITHUB_PATH
+          sonar-scanner --version
+
+      # Run SonarCloud Scan
+      - name: Run SonarCloud Scan
+        uses: SonarSource/sonarcloud-github-action@v2
+        with:
+          args: >
+            -Dsonar.projectKey=sandeshhypha-eng_docker
+            -Dsonar.organization=sandeshhypha-eng
+            -Dsonar.sources=.
+        env:
+          SONAR_TOKEN: ad37d70917d9acbfc5429a3a7c5f65bc8bad45a8
+
+  # ---------------------------
+  # OWASP DAST Scan using ZAP
+  # ---------------------------
+  dast:
+    runs-on: ubuntu-latest
+    needs: sonar
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v2
+
+      # Set up Python for running Flask app
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.12'
+
+      # Install dependencies
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
+
+      # Start Flask application in background
+      - name: Start Flask Application
+        run: |
+          echo "Starting Flask app on port 5000..."
+          python app.py > /tmp/flask.log 2>&1 &
+          FLASK_PID=$!
+          echo "FLASK_PID=$FLASK_PID" >> $GITHUB_ENV
+          sleep 3
+          echo "Flask PID: $FLASK_PID"
+
+      # Health check to verify Flask app is running
+      - name: Health Check
+        run: |
+          echo "Checking if Flask app is running..."
+          max_attempts=10
+          attempt=0
+          while [ $attempt -lt $max_attempts ]; do
+            if curl -s http://localhost:5000/ > /dev/null 2>&1; then
+              echo "✅ Flask app is running and responding"
+              exit 0
+            fi
+            attempt=$((attempt + 1))
+            echo "Attempt $attempt/$max_attempts - waiting for app..."
+            sleep 2
+          done
+          echo "❌ Flask app failed to start"
+          cat /tmp/flask.log
+          exit 1
+
+      # Display Flask app logs
+      - name: Display Flask App Logs
+        if: always()
+        run: |
+          echo "=== Flask Application Logs ==="
+          cat /tmp/flask.log || echo "No logs available"
+
+      # Pull ZAP Docker image
+      - name: Pull ZAP Image
+        run: |
+          docker pull ghcr.io/zaproxy/zaproxy:stable
+
+      # Run OWASP ZAP Baseline Scan
+      - name: Run OWASP DAST (ZAP Baseline Scan)
+        run: |
+          echo "=========================================="
+          echo "Starting OWASP ZAP Dynamic Security Scan"
+          echo "=========================================="
+          echo "Target: http://localhost:5000"
+          echo "Scan Type: Baseline (Fast)"
+          echo ""
+          
+          docker run --rm \
+            --network host \
+            -v $(pwd):/zap/wrk \
+            ghcr.io/zaproxy/zaproxy:stable \
+            zap-baseline.py \
+            -t http://localhost:5000 \
+            -r zap_baseline_report.html \
+            -J zap_baseline_report.json \
+            -x zap_baseline_report.xml
+
+      # Upload ZAP scan results as artifacts
+      - name: Upload ZAP Scan Reports
+        if: always()
+        uses: actions/upload-artifact@v3
+        with:
+          name: zap-scan-reports
+          path: |
+            zap_baseline_report.html
+            zap_baseline_report.json
+            zap_baseline_report.xml
+
+      # Parse and display ZAP results
+      - name: Parse ZAP Results
+        if: always()
+        run: |
+          echo "=========================================="
+          echo "OWASP ZAP Scan Results Summary"
+          echo "=========================================="
+          if [ -f zap_baseline_report.json ]; then
+            echo "Scan completed successfully!"
+            echo ""
+            echo "Report generated: zap_baseline_report.json"
+            # Extract summary from JSON
+            python3 << 'EOF'
+          import json
+          import sys
+          
+          try:
+              with open('zap_baseline_report.json', 'r') as f:
+                  data = json.load(f)
+              
+              # Display scan statistics
+              if 'site' in data:
+                  alerts = data['site'][0].get('alerts', [])
+                  print(f"Total Alerts Found: {len(alerts)}")
+                  print("")
+                  
+                  # Group by risk level
+                  risk_counts = {'High': 0, 'Medium': 0, 'Low': 0, 'Informational': 0}
+                  for alert in alerts:
+                      risk = alert.get('riskdesc', 'Informational')
+                      if risk in risk_counts:
+                          risk_counts[risk] += 1
+                  
+                  print("📊 Vulnerabilities by Risk Level:")
+                  print(f"  🔴 High: {risk_counts['High']}")
+                  print(f"  🟠 Medium: {risk_counts['Medium']}")
+                  print(f"  🟡 Low: {risk_counts['Low']}")
+                  print(f"  ℹ️  Informational: {risk_counts['Informational']}")
+                  print("")
+                  
+                  print("Detected Issues:")
+                  for alert in alerts[:10]:  # Show first 10
+                      print(f"  - {alert.get('name', 'Unknown')}")
+                      print(f"    Risk: {alert.get('riskdesc', 'N/A')}")
+                      print(f"    URL: {alert.get('instances', [{}])[0].get('uri', 'N/A')}")
+                      print("")
+          except Exception as e:
+              print(f"Error parsing results: {e}")
+              sys.exit(1)
+          EOF
+          else
+            echo "No JSON report found"
+          fi
+          echo "=========================================="
+          echo "✅ DAST scan completed. Check artifacts for detailed reports."
+          echo "=========================================="
+
+      # Stop Flask app
+      - name: Stop Flask Application
+        if: always()
+        run: |
+          if [ ! -z "$FLASK_PID" ]; then
+            kill $FLASK_PID 2>/dev/null || true
+            echo "✅ Flask application stopped"
+          fi
+
+  # ---------------------------
+  # Build Python Application
+  # ---------------------------
+  build:
+    runs-on: ubuntu-latest
+    needs: dast
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v2
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.12'
+
+      # Install dependencies
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
+
+      # Run tests (optional)
+      - name: Run tests
+        run: |
+          if [ -f pytest.ini ] || [ -d tests ]; then pytest; fi
+
+  # ---------------------------
+  # Build and Scan Docker Image
+  # ---------------------------
+  docker:
+    runs-on: ubuntu-latest
+    needs: build
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v2
+
+      # Build Docker image
+      - name: Build Docker image
+        run: docker build -t your_dockerhub_username/your_image_name:latest .
+
+      # Scan Docker image with Trivy
+      - name: Scan Docker image
+        run: |
+          trivy image --exit-code 1 --severity HIGH,CRITICAL your_dockerhub_username/your_image_name:latest
+
+  # ---------------------------
+  # Push Docker Image to Docker Hub
+  # ---------------------------
+  push:
+    runs-on: ubuntu-latest
+    needs: docker
+    steps:
+      - name: Log in to Docker Hub
+        uses: docker/login-action@v1
+        with:
+          username: Sandesh Hypha
+          password: Sandy@100!
+
+      # Push Docker image
+      - name: Push Docker image
+        run: docker push your_dockerhub_username/your_image_name:latest
