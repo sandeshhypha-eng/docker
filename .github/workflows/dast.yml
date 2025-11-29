@@ -5,9 +5,36 @@ on:
   pull_request:
 
 jobs:
-  # ---------------------------
-  # OWASP ZAP DAST Scan
-  # ---------------------------
+
+          # ----------------------------
+          # Explanation of ZAP parameters
+          #
+          # zap-baseline.py:
+          #   - Does NOT attack the site aggressively
+          #   - Performs PASSIVE security tests only
+          #   - Safe for CI/CD pipelines
+          #
+          # Flags:
+          # -t <URL>
+          #     Target to scan
+          #
+          # -r zap_report.html
+          #     Human-readable HTML report
+          #
+          # --exit-code-ignore 2
+          #     ZAP returns exit code 2 when warnings exist
+          #     (like missing security headers → harmless)
+          #
+          #     This prevents the CI pipeline from failing.
+          #
+          # --auto
+          #     Skip prompts and run in full auto mode
+          #
+          # The reports are stored in /zap/wrk inside container,
+          # mapped to $GITHUB_WORKSPACE/zap in GitHub Actions.
+          # ----------------------------
+
+      # Upload ZAP report artifacts (HTML, log files, etc.)
   dast:
     runs-on: ubuntu-latest
 
