@@ -1,0 +1,120 @@
+# Define all services (containers) that make up this application
+services:
+  # Frontend Service - React web application that users interact with
+  frontend:
+    # Build configuration - tells Docker how to build the frontend image
+    build:
+      # Context: directory containing the Dockerfile and source code for frontend
+      context: ./frontend
+      # Dockerfile: path to the Dockerfile inside the frontend directory
+      dockerfile: Dockerfile
+      # Build arguments: variables passed to the Dockerfile during build time
+      args:
+        # Set the backend API URL that React will use (only needed if using build-time env vars)
+        - REACT_APP_BACKEND_URL=http://backend:3500/api/tasks
+    # container_name: custom name for this container (instead of auto-generated names)
+    container_name: frontend-app
+    # ports: map container ports to host machine ports (host:container)
+    # 3000:3000 means access the app at http://localhost:3000 on your machine
+    ports:
+      - "3000:3000"
+    # depends_on: this service depends on the backend service
+    # Docker will start backend before starting frontend
+    depends_on:
+      - backend
+    # networks: connect this container to the app-network so it can communicate with other services
+    networks:
+      - app-network
+    # restart: policy for automatically restarting the container if it crashes
+    # unless-stopped: restart unless explicitly stopped by user
+    restart: unless-stopped
+
+  # Backend Service - Node.js/Express API server that handles business logic
+  backend:
+    # Build configuration - tells Docker how to build the backend image
+    build:
+      # Context: directory containing the Dockerfile and source code for backend
+      context: ./backend
+      # Dockerfile: path to the Dockerfile inside the backend directory
+      dockerfile: Dockerfile
+    # container_name: custom name for this container (instead of auto-generated names)
+    container_name: backend-app
+    # ports: map container ports to host machine ports (host:container)
+    # 3500:3500 means the API is accessible at http://localhost:3500 on your machine
+    ports:
+      - "3500:3500"
+    # environment: set environment variables inside the container
+    environment:
+      # NODE_ENV: tells Node.js this is a production environment
+      - NODE_ENV=production
+      # MONGO_CONN_STR: MongoDB connection string (mongo is the service name inside Docker network)
+      - MONGO_CONN_STR=mongodb://mongo:27017/tasks
+      # USE_DB_AUTH: whether to use authentication for MongoDB (false = no auth required)
+      - USE_DB_AUTH=false
+    # depends_on: this service depends on MongoDB service
+    # condition: service_healthy means wait until MongoDB is healthy before starting backend
+    depends_on:
+      mongo:
+        condition: service_healthy
+    # networks: connect this container to the app-network so it can communicate with other services
+    networks:
+      - app-network
+    # restart: policy for automatically restarting the container if it crashes
+    # unless-stopped: restart unless explicitly stopped by user
+    restart: unless-stopped
+
+  # MongoDB Service - NoSQL database that stores all task data
+  mongo:
+    # image: use the official MongoDB 6.0 image from Docker Hub (don't build, just use existing)
+    image: mongo:6.0
+    # container_name: custom name for this container (instead of auto-generated names)
+    container_name: mongodb
+    # environment: set environment variables inside the MongoDB container
+    environment:
+      # MONGO_INITDB_DATABASE: automatically create this database when MongoDB first starts
+      - MONGO_INITDB_DATABASE=tasks
+    # ports: map container ports to host machine ports (host:container)
+    # 27017:27017 means MongoDB is accessible at localhost:27017 on your machine
+    ports:
+      - "27017:27017"
+    # volumes: persist data between container restarts
+    volumes:
+      # mongo-data: volume for storing actual database files (ensures data survives container restarts)
+      - mongo-data:/data/db
+      # mongo-config: volume for storing MongoDB configuration files
+      - mongo-config:/data/configdb
+    # networks: connect this container to the app-network so backend can reach it
+    networks:
+      - app-network
+    # restart: policy for automatically restarting the container if it crashes
+    # unless-stopped: restart unless explicitly stopped by user
+    restart: unless-stopped
+    # healthcheck: periodically check if MongoDB is healthy and ready to accept connections
+    healthcheck:
+      # test: command to run to check health (ping the database)
+      test: echo 'db.runCommand("ping").ok' | mongosh localhost:27017/test --quiet
+      # interval: run health check every 10 seconds
+      interval: 10s
+      # timeout: health check must complete within 5 seconds or it's considered failed
+      timeout: 5s
+      # retries: if health check fails 5 times in a row, mark the container as unhealthy
+      retries: 5
+
+# volumes: define named volumes that persist data between container restarts
+volumes:
+  # mongo-data: stores MongoDB's actual database files
+  # driver: local means data is stored on your local machine (not in the cloud)
+  mongo-data:
+    driver: local
+  # mongo-config: stores MongoDB's configuration files
+  # driver: local means data is stored on your local machine (not in the cloud)
+  mongo-config:
+    driver: local
+
+# networks: define custom networks that allow containers to communicate with each other
+networks:
+  # app-network: custom bridge network that connects all three services
+  # allows frontend to reach backend, backend to reach MongoDB, etc.
+  app-network:
+    # driver: bridge means create an internal network bridge (containers can communicate via service names)
+    driver: bridge
